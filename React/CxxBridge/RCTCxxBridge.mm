@@ -924,6 +924,10 @@ struct RCTInstanceCallback : public InstanceCallback {
       // Perform the state update and notification on the main thread, so we can't run into
       // timing issues with RCTRootView
       dispatch_async(dispatch_get_main_queue(), ^{
+          if (onCompletion) {
+            onCompletion();
+          }
+          
         [[NSNotificationCenter defaultCenter] postNotificationName:RCTJavaScriptDidLoadNotification
                                                             object:self->_parentBridge
                                                           userInfo:@{@"bridge" : self}];
