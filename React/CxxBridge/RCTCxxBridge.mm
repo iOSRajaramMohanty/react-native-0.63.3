@@ -388,6 +388,24 @@ struct RCTInstanceCallback : public InstanceCallback {
   RCT_PROFILE_END_EVENT(RCTProfileTagAlways, @"");
 }
 
+- (void)startLazyLoading:(void (^)(void))onCompletion
+{
+    __weak RCTCxxBridge *weakSelf = self;
+
+    __block NSData *sourceCode;
+    [self loadSource:^(NSError *error, RCTSource *source) {
+        if (error) {
+            [weakSelf handleError:error];
+        }
+
+        sourceCode = source.data;
+        RCTCxxBridge *strongSelf = weakSelf;
+        if (sourceCode) {
+            [strongSelf executeSourceCode:sourceCode sync:NO onCompletion:onCompletion];
+        }
+    } onProgress:nil];
+}
+
 - (void)loadSource:(RCTSourceLoadBlock)_onSourceLoad onProgress:(RCTSourceLoadProgressBlock)onProgress
 {
   NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
@@ -889,38 +907,44 @@ struct RCTInstanceCallback : public InstanceCallback {
 
 - (void)executeSourceCode:(NSData *)sourceCode sync:(BOOL)sync
 {
-  // This will get called from whatever thread was actually executing JS.
-  dispatch_block_t completion = ^{
-    // Log start up metrics early before processing any other js calls
-    [self logStartupFinish];
-    // Flush pending calls immediately so we preserve ordering
-    [self _flushPendingCalls];
-
-    // Perform the state update and notification on the main thread, so we can't run into
-    // timing issues with RCTRootView
-    dispatch_async(dispatch_get_main_queue(), ^{
-      [[NSNotificationCenter defaultCenter] postNotificationName:RCTJavaScriptDidLoadNotification
-                                                          object:self->_parentBridge
-                                                        userInfo:@{@"bridge" : self}];
-
-      // Starting the display link is not critical to startup, so do it last
-      [self ensureOnJavaScriptThread:^{
-        // Register the display link to start sending js calls after everything is setup
-        [self->_displayLink addToRunLoop:[NSRunLoop currentRunLoop]];
-      }];
-    });
-  };
-
-  if (sync) {
-    [self executeApplicationScriptSync:sourceCode url:self.bundleURL];
-    completion();
-  } else {
-    [self enqueueApplicationScript:sourceCode url:self.bundleURL onComplete:completion];
-  }
-
-  [self.devSettings setupHotModuleReloadClientIfApplicableForURL:self.bundleURL];
+    [self executeSourceCode:sourceCode sync:sync onCompletion:nil];
 }
 
+- (void)executeSourceCode:(NSData *)sourceCode
+                     sync:(BOOL)sync
+             onCompletion:(void (^)(void))onCompletion
+{
+    // This will get called from whatever thread was actually executing JS.
+    dispatch_block_t completion = ^{
+      // Log start up metrics early before processing any other js calls
+      [self logStartupFinish];
+      // Flush pending calls immediately so we preserve ordering
+      [self _flushPendingCalls];
+
+      // Perform the state update and notification on the main thread, so we can't run into
+      // timing issues with RCTRootView
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [[NSNotificationCenter defaultCenter] postNotificationName:RCTJavaScriptDidLoadNotification
+                                                            object:self->_parentBridge
+                                                          userInfo:@{@"bridge" : self}];
+
+        // Starting the display link is not critical to startup, so do it last
+        [self ensureOnJavaScriptThread:^{
+          // Register the display link to start sending js calls after everything is setup
+          [self->_displayLink addToRunLoop:[NSRunLoop currentRunLoop]];
+        }];
+      });
+    };
+
+    if (sync) {
+      [self executeApplicationScriptSync:sourceCode url:self.bundleURL];
+      completion();
+    } else {
+      [self enqueueApplicationScript:sourceCode url:self.bundleURL onComplete:completion];
+    }
+
+    [self.devSettings setupHotModuleReloadClientIfApplicableForURL:self.bundleURL];
+}
 - (void)handleError:(NSError *)error
 {
   // This is generally called when the infrastructure throws an

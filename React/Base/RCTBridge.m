@@ -323,6 +323,13 @@ RCT_NOT_IMPLEMENTED(-(instancetype)init)
   RCT_PROFILE_END_EVENT(RCTProfileTagAlways, @"");
 }
 
+-(void)lazyLoad:(NSString *)bundleName
+   onCompletion:(void (^)(void))onCompletion
+{
+    _bundleURL = [[[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] lastObject] URLByAppendingPathComponent:[@"" stringByAppendingFormat:@"%@.jsbundle",bundleName]];//[NSBundle.mainBundle URLForResource:bundleName withExtension:@"jsbundle"];
+    [self.batchedBridge startLazyLoading:onCompletion];
+}
+
 - (BOOL)isLoading
 {
   return self.batchedBridge.loading;
